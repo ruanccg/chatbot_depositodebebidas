@@ -1,16 +1,19 @@
 {
-  "name": "chatbot-deposito-atacado",
+  "name": "deposito-bebidas-chatbot",
   "version": "1.0.0",
-  "description": "Chatbot WhatsApp para Depósito de Bebidas (Atacado)",
+  "description": "Chatbot WhatsApp para Depósito de Bebidas (modo atacado) - Projeto ADS",
   "main": "chatbot.js",
   "scripts": {
     "start": "node chatbot.js"
   },
   "dependencies": {
     "moment-timezone": "^0.5.45",
-    "openai": "^4.78.1",
-    "puppeteer": "^24.32.1",
     "qrcode-terminal": "^0.12.0",
-    "whatsapp-web.js": "1.34.2"
+    "whatsapp-web.js": "1.34.2",
+    "csv-parse": "^5.4.0",
+    "csv-stringify": "^6.2.0"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }
