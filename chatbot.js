@@ -1,20 +1,25 @@
 // chatbot.js - DEPÓSITO DE BEBIDAS PRIME (versão ATACADO apenas)
-// Recomendações (opcionais):
-// export HEADLESS=false
-// export CHROME_PATH="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
-// export OWNER_NUMBER="+5588XXXXXXXX@c.us"
+// Observações:
+// - Configure variáveis de ambiente opcionais:
+//   HEADLESS (true|false), CHROME_PATH (caminho do Chrome), OWNER_NUMBER (ex: "+5588XXXXXXXX@c.us")
+// - Para GDPR/LGPD: comando apagar_meus_dados apaga da memória local (users map) e registra no removed_users.log
 
 const qrcode = require("qrcode-terminal");
 const fs = require("fs");
 const path = require("path");
 const { Client, List, LocalAuth } = require("whatsapp-web.js");
 
-// ---- Config ----
+// ---- Configurações ----
 const DEBUG_HEADLESS = (process.env.HEADLESS || "true").toLowerCase() === "true";
 const OWNER_NUMBER = process.env.OWNER_NUMBER || null;
 const ORDERS_CSV = path.join(__dirname, "orders.csv");
+const REMOVED_USERS_LOG = path.join(__dirname, "removed_users.log");
 
-// ---- DEPOSITO e CATALOGO (ATACADO) ----
+// ---- Ajuste de delays (reduzidos para respostas mais rápidas) ----
+const DELAY_CURTO = 80;   // curto
+const DELAY_MEDIO = 150;  // médio
+
+// ---- DEPÓSITO e CATÁLOGO (ATACADO) ----
 const DEPOSITO = {
   nome: "Depósito de Bebidas Prime",
   telefone: "(88) 9 9999-9999 (WhatsApp)",
@@ -29,20 +34,20 @@ const DEPOSITO = {
       { code: "W02", name: "Johnnie Walker Red Label 1L", price: 99.0 },
       { code: "W03", name: "Johnnie Walker Black Label 1L", price: 168.0 },
       { code: "W04", name: "Ballantine’s Finest 1L", price: 85.0 },
-      { code: "W05", name: "Chivas Regal 12 anos 1L", price: 148.0 },
+      { code: "W05", name: "Chivas Regal 12 anos 1L", price: 148.0 }
     ],
     "Espumantes & Champagnes 🍾": [
       { code: "E01", name: "Chandon Brut 750ml", price: 88.0 },
       { code: "E02", name: "Chandon Rosé 750ml", price: 102.0 },
       { code: "E03", name: "Salton Prosecco 750ml", price: 36.0 },
       { code: "E04", name: "Salton Brut 750ml", price: 32.0 },
-      { code: "E05", name: "Mumm Cordon Rouge 750ml", price: 128.0 },
+      { code: "E05", name: "Mumm Cordon Rouge 750ml", price: 128.0 }
     ],
     "Vinhos 🍷": [
       { code: "V01", name: "Vinho Tinto Chileno Reservado 750ml", price: 31.0 },
       { code: "V02", name: "Vinho Argentino Malbec 750ml", price: 40.0 },
       { code: "V03", name: "Vinho Português Periquita 750ml", price: 36.0 },
-      { code: "V04", name: "Vinho Verde Português 750ml", price: 31.0 },
+      { code: "V04", name: "Vinho Verde Português 750ml", price: 31.0 }
     ],
     "Destilados / Licor 🥃": [
       { code: "D01", name: "Campari 900ml", price: 40.0 },
@@ -50,13 +55,13 @@ const DEPOSITO = {
       { code: "D03", name: "Contini 900ml", price: 39.0 },
       { code: "D04", name: "Vodka Smirnoff 1L", price: 35.0 },
       { code: "D05", name: "Vodka Absolut 1L", price: 80.0 },
-      { code: "D06", name: "Vodka Cîroc 750ml", price: 165.0 },
+      { code: "D06", name: "Vodka Cîroc 750ml", price: 165.0 }
     ],
     "Prontos para Beber (RTD) 🍹": [
       { code: "R01", name: "Smirnoff Ice 269ml", price: 6.2 },
       { code: "R02", name: "Beats Senses 269ml", price: 7.0 },
       { code: "R03", name: "Beats Pink 269ml", price: 7.0 },
-      { code: "R04", name: "Gin Tônica Lata 350ml", price: 8.0 },
+      { code: "R04", name: "Gin Tônica Lata 350ml", price: 8.0 }
     ],
     "Cervejas (lata/garrafa) 🍺": [
       { code: "C01", name: "Skol Lata 350ml", price: 4.0 },
@@ -65,43 +70,43 @@ const DEPOSITO = {
       { code: "C04", name: "Heineken Lata 350ml", price: 5.9 },
       { code: "C05", name: "Heineken Garrafa 600ml", price: 9.0 },
       { code: "C06", name: "Budweiser 330ml", price: 5.4 },
-      { code: "C07", name: "Stella Artois 275ml", price: 7.0 },
+      { code: "C07", name: "Stella Artois 275ml", price: 7.0 }
     ],
     "Refrigerantes 🥤": [
       { code: "RF01", name: "Coca-Cola Lata 350ml", price: 4.5 },
       { code: "RF02", name: "Coca-Cola 1L", price: 6.8 },
       { code: "RF03", name: "Coca-Cola 2L", price: 9.0 },
       { code: "RF04", name: "Guaraná Lata 350ml", price: 4.0 },
-      { code: "RF05", name: "Sprite Lata 350ml", price: 4.0 },
+      { code: "RF05", name: "Sprite Lata 350ml", price: 4.0 }
     ],
     "Energéticos ⚡": [
       { code: "EN01", name: "Red Bull 250ml", price: 9.0 },
       { code: "EN02", name: "Red Bull Tropical 250ml", price: 10.5 },
       { code: "EN03", name: "Monster Tradicional 473ml", price: 8.0 },
-      { code: "EN04", name: "Monster Mango Loco 473ml", price: 8.0 },
+      { code: "EN04", name: "Monster Mango Loco 473ml", price: 8.0 }
     ],
     "Gelo ❄️": [
       { code: "G01", name: "Saco Gelo 1kg", price: 6.0 },
-      { code: "G02", name: "Saco Gelo 5kg", price: 15.0 },
-    ],
-  },
+      { code: "G02", name: "Saco Gelo 5kg", price: 15.0 }
+    ]
+  }
 };
 
-// ---- Áreas de entrega permitidas (normalizadas, sem acento) ----
-const ALLOWED_NEIGHBORHOODS = [
+// ---- Bairros permitidos (normalizados, sem acento) ----
+const BAIRROS_PERMITIDOS = [
   "vila sao roque", "vilinha", "canoeiro", "trizidela", "expoagra", "vila tucum",
   "aeroporto", "ronierd barros", "joana batista", "conjunto parque grajau",
   "conjunto frei alberto beretta", "centro", "rodoviaria", "extrema"
 ];
 
-// ---- Utils ----
+// ---- Utilitários ----
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-function formatCurrency(v) {
+function formatarMoeda(v) {
   return "R$ " + v.toFixed(2).replace(".", ",");
 }
 
-function generateOrderCode() {
+function gerarCodigoPedido() {
   const now = new Date();
   const y = now.getFullYear().toString().slice(-2);
   const m = String(now.getMonth() + 1).padStart(2, "0");
@@ -110,15 +115,15 @@ function generateOrderCode() {
   return `P${y}${m}${d}-${t}`;
 }
 
-function ensureOrdersCsv() {
+function garantirOrdersCsv() {
   if (!fs.existsSync(ORDERS_CSV)) {
     const header = "order_code,datetime,client,phone,address,items,total,payment_method,notes\n";
     fs.writeFileSync(ORDERS_CSV, header, { encoding: "utf8" });
   }
 }
 
-function saveOrderToCsv(obj) {
-  ensureOrdersCsv();
+function salvarPedidoCsv(obj) {
+  garantirOrdersCsv();
   const line = [
     obj.order_code,
     obj.datetime,
@@ -133,28 +138,28 @@ function saveOrderToCsv(obj) {
   fs.appendFileSync(ORDERS_CSV, line, { encoding: "utf8" });
 }
 
-// remove acentos e normaliza para comparação
-function removeAccents(str = "") {
+// Remover acentos e normalizar para comparação
+function removerAcentos(str = "") {
   return str.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-// Verifica se o endereço informado pertence a um dos bairros permitidos
-function addressInAllowedNeighborhood(addressText) {
-  if (!addressText) return false;
-  const norm = removeAccents(addressText);
-  for (const nb of ALLOWED_NEIGHBORHOODS) {
+// Verifica se endereço informado pertence a bairro permitido
+function enderecoEmBairroPermitido(enderecoTexto) {
+  if (!enderecoTexto) return false;
+  const norm = removerAcentos(enderecoTexto);
+  for (const nb of BAIRROS_PERMITIDOS) {
     if (norm.includes(nb)) return true;
   }
   return false;
 }
 
-// busca produto pelo nome (fuzzy simples) - usa normalização
-function findProductByName(inputText) {
-  const text = removeAccents(inputText || "");
+// Busca produto pelo nome ou código (fuzzy simples)
+function buscarProdutoPorNome(inputText) {
+  const text = removerAcentos(inputText || "");
   const flat = [];
   for (const [cat, arr] of Object.entries(DEPOSITO.categories)) {
     for (const p of arr) {
-      flat.push({ ...p, category: cat, nameNorm: removeAccents(p.name) });
+      flat.push({ ...p, category: cat, nameNorm: removerAcentos(p.name) });
     }
   }
   const byCode = flat.find((p) => text.includes(p.code.toLowerCase()));
@@ -171,18 +176,18 @@ function findProductByName(inputText) {
   return best ? { code: best.code, name: best.name, price: best.price, category: best.category } : null;
 }
 
-function extractQuantity(text) {
+function extrairQuantidade(text) {
   const m = (text || "").match(/(\d+)\s*(x|un|unidades|uni|kg|g)?/i);
   if (m) return parseInt(m[1], 10);
   return null;
 }
 
-function suggestUpsell(product) {
-  const cat = product.category;
+function sugerirUpsell(produto) {
+  const cat = produto.category;
   const arr = DEPOSITO.categories[cat] || [];
   const sorted = arr.slice().sort((a, b) => a.price - b.price);
   for (let i = 0; i < sorted.length; i++) {
-    if (sorted[i].code === product.code && i < sorted.length - 1) {
+    if (sorted[i].code === produto.code && i < sorted.length - 1) {
       return sorted[i + 1];
     }
   }
@@ -190,11 +195,11 @@ function suggestUpsell(product) {
 }
 
 // ---- Estado por usuário ----
-const users = new Map(); // phone -> { clientName, address }
-const pedidoState = new Map(); // phone -> { step, items, total, ... }
+const usuarios = new Map(); // phone -> { clientName, address }
+const estadoPedido = new Map(); // phone -> { step, items, total, ... }
 
-// ---- Helpers de mensagem / listas ----
-function buildCategoriesList() {
+// ---- Funções de catálogo / listas ----
+function construirListaCategorias() {
   const rows = [];
   for (const cat of Object.keys(DEPOSITO.categories)) {
     rows.push({ id: `cat_${rows.length}`, title: cat, description: `Ver produtos da categoria ${cat}` });
@@ -208,8 +213,7 @@ function buildCategoriesList() {
   );
 }
 
-// >>> nova função: cria texto que mostra todas as categorias (visível no chat)
-function buildCategoriesText() {
+function construirTextoCategorias() {
   const cats = Object.keys(DEPOSITO.categories);
   let txt = "📦 *Categorias disponíveis:*\n\n";
   cats.forEach((cat, i) => {
@@ -219,13 +223,35 @@ function buildCategoriesText() {
   return txt;
 }
 
-function buildProductsListForCategory(catName) {
+function construirListaProdutosParaCategoria(catName) {
   const arr = DEPOSITO.categories[catName] || [];
-  const rows = arr.map((p, i) => ({ id: `prod_${p.code}`, title: `${i + 1}️⃣ ${p.name}`, description: `${formatCurrency(p.price)} (atacado)` }));
+  const rows = arr.map((p, i) => ({ id: `prod_${p.code}`, title: `${i + 1}️⃣ ${p.name}`, description: `${formatarMoeda(p.price)} (atacado)` }));
   return new List(`Produtos — ${catName}`, "Ver produtos", [{ title: catName, rows }], `${DEPOSITO.nome}`, "Escolha um produto");
 }
 
-// ---- Client ----
+// ---- GDPR / LGPD: apagar dados do usuário (memória) ----
+function apagarDadosDoUsuario(phone) {
+  const had = usuarios.has(phone) || estadoPedido.has(phone);
+  usuarios.delete(phone);
+  estadoPedido.delete(phone);
+  const now = new Date().toISOString();
+  const logLine = `${now},${phone}\n`;
+  try {
+    fs.appendFileSync(REMOVED_USERS_LOG, logLine, { encoding: "utf8" });
+  } catch (e) {
+    console.warn("Erro ao registrar remoção:", e?.message || e);
+  }
+  return had;
+}
+
+// ---- FAQ prontas ----
+const FAQ = {
+  troca: "🔁 *Trocas*: Aceitamos troca de produtos em até 7 dias úteis mediante apresentação do comprovante e produto em perfeito estado. Para iniciar a troca, informe o código do pedido e a razão da troca.",
+  devolucao: "↩️ *Devoluções*: Devoluções serão analisadas caso o produto chegue avariado. Envie foto do produto e do lacre. Caso confirmado, reembolso ou troca a combinar.",
+  promocoes: "🎉 *Promoções*: Promoções são divulgadas no WhatsApp e nas nossas redes. Pergunte sempre por 'promoções' ou 'ofertas' para ver as atuais."
+};
+
+// ---- Cliente WhatsApp ----
 const client = new Client({
   authStrategy: new LocalAuth(),
   puppeteer: {
@@ -258,45 +284,73 @@ client.on("message", async (msg) => {
   try {
     const from = msg.from;
     const textRaw = (msg.body || "").trim();
-    const textNorm = removeAccents(textRaw);
+    const textNorm = removerAcentos(textRaw);
     console.log(`[MSG] from=${from} text="${textRaw}" textNorm="${textNorm}"`);
 
-    if (!from.endsWith("@c.us")) return; // ignora grupos
+    // ignorar grupos e mensagens não-whatsapp
+    if (!from.endsWith("@c.us")) return;
 
-    // --- Se o cliente já está em fluxo de pedido ---
-    if (pedidoState.has(from)) {
-      const state = pedidoState.get(from);
+    // Comando RGPD/LGPD: apagar meus dados
+    if (textNorm.match(/\b(apagar_meus_dados|apagar meus dados|apagar_meus_dados)\b/)) {
+      const had = apagarDadosDoUsuario(from);
+      if (had) {
+        await delay(DELAY_CURTO);
+        await msg.reply("✅ Seus dados foram removidos da memória do bot. Algumas informações (pedidos antigos) continuam no arquivo de pedidos por segurança e auditoria, mas seu cadastro foi apagado. Para cancelamento completo de backups, contate o responsável.");
+      } else {
+        await delay(DELAY_CURTO);
+        await msg.reply("Não encontrei dados seus salvos na memória do bot. Se quiser, posso verificar registros antigos (contate o responsável).");
+      }
+      return;
+    }
 
-      // (fluxo igual ao anterior: aguardando_produto, confirm_item, endereço, nome, pagamento, confirmar)
-      // para brevidade o fluxo completo foi preservado do arquivo anterior.
-      // Implementação completa:
-      if (state.step === "aguardando_produto") {
-        const qty = extractQuantity(textRaw);
-        const prod = findProductByName(textRaw);
+    // Perguntas frequentes (FAQ)
+    if (textNorm.match(/\b(troca|trocas)\b/)) {
+      await delay(DELAY_CURTO);
+      await msg.reply(FAQ.troca);
+      return;
+    }
+    if (textNorm.match(/\b(devoluc|devolução|devolucao)\b/)) {
+      await delay(DELAY_CURTO);
+      await msg.reply(FAQ.devolucao);
+      return;
+    }
+    if (textNorm.match(/\b(promoc|promoções|promocoes|oferta|ofertas)\b/)) {
+      await delay(DELAY_CURTO);
+      await msg.reply(FAQ.promocoes);
+      return;
+    }
+
+    // Se o usuário já está em fluxo de pedido
+    if (estadoPedido.has(from)) {
+      const estado = estadoPedido.get(from);
+
+      if (estado.step === "aguardando_produto") {
+        const qtd = extrairQuantidade(textRaw);
+        const prod = buscarProdutoPorNome(textRaw);
         if (prod) {
-          const quantity = qty || 1;
-          state.items.push({ code: prod.code, name: prod.name, price: prod.price, qty: quantity, category: prod.category });
-          state.total = state.items.reduce((s, it) => s + it.price * it.qty, 0);
-          state.step = "confirm_item";
-          state.pending_upsell = suggestUpsell(prod);
-          pedidoState.set(from, state);
+          const quantidade = qtd || 1;
+          estado.items.push({ code: prod.code, name: prod.name, price: prod.price, qty: quantidade, category: prod.category });
+          estado.total = estado.items.reduce((s, it) => s + it.price * it.qty, 0);
+          estado.step = "confirmar_item";
+          estado.pending_upsell = sugerirUpsell(prod);
+          estadoPedido.set(from, estado);
 
-          await delay(300);
-          await msg.reply(`✅ Adicionado: ${prod.name}\nQuantidade: ${quantity}\nSubtotal: ${formatCurrency(prod.price * quantity)}`);
+          await delay(DELAY_CURTO);
+          await msg.reply(`✅ Adicionado: ${prod.name}\nQuantidade: ${quantidade}\nSubtotal: ${formatarMoeda(prod.price * quantidade)}`);
 
-          if (state.pending_upsell) {
-            await delay(200);
-            await msg.reply(`Sugestão: que tal também *${state.pending_upsell.name}* por ${formatCurrency(state.pending_upsell.price)}? Responda *SIM* para adicionar, *NÃO* para pular.`);
+          if (estado.pending_upsell) {
+            await delay(DELAY_CURTO);
+            await msg.reply(`Sugestão: que tal também *${estado.pending_upsell.name}* por ${formatarMoeda(estado.pending_upsell.price)}? Responda *SIM* para adicionar, *NÃO* para pular.`);
           } else {
-            await delay(200);
+            await delay(DELAY_CURTO);
             await msg.reply('Deseja adicionar mais itens? Digite o nome do produto ou *continuar* para seguir.');
           }
           return;
         } else {
           if (textNorm.match(/\b(catalogo|menu|categorias|produtos)\b/)) {
             console.log("Enviando categorias (pedido flow).");
-            await client.sendMessage(from, buildCategoriesText());
-            await client.sendMessage(from, buildCategoriesList());
+            await client.sendMessage(from, construirTextoCategorias());
+            await client.sendMessage(from, construirListaCategorias());
             return;
           }
           await msg.reply("Não encontrei esse produto. Digite o nome exato, use o catálogo ou digite *catálogo* para ver categorias.");
@@ -304,51 +358,51 @@ client.on("message", async (msg) => {
         }
       }
 
-      if (state.step === "confirm_item") {
-        if (state.pending_upsell && textNorm.match(/^(sim|s)$/i)) {
-          const up = state.pending_upsell;
-          state.items.push({ code: up.code, name: up.name, price: up.price, qty: 1, category: up.category });
-          state.total = state.items.reduce((s, it) => s + it.price * it.qty, 0);
-          state.pending_upsell = null;
-          pedidoState.set(from, state);
+      if (estado.step === "confirmar_item") {
+        if (estado.pending_upsell && textNorm.match(/^(sim|s)$/i)) {
+          const up = estado.pending_upsell;
+          estado.items.push({ code: up.code, name: up.name, price: up.price, qty: 1, category: up.category });
+          estado.total = estado.items.reduce((s, it) => s + it.price * it.qty, 0);
+          estado.pending_upsell = null;
+          estadoPedido.set(from, estado);
           await msg.reply(`✅ Upsell adicionado: ${up.name} (1 unidade). Deseja adicionar mais? Digite produto ou *continuar*.`);
           return;
-        } else if (state.pending_upsell && textNorm.match(/^(nao|não|n)$/i)) {
-          state.pending_upsell = null;
-          pedidoState.set(from, state);
+        } else if (estado.pending_upsell && textNorm.match(/^(nao|não|n)$/i)) {
+          estado.pending_upsell = null;
+          estadoPedido.set(from, estado);
           await msg.reply("Ok. Deseja adicionar mais itens? Digite o produto ou *continuar* para avançar.");
           return;
         }
 
         if (textNorm.match(/\b(continuar|prosseguir|finalizar|ok|confirmar)\b/)) {
-          state.step = "aguardar_endereco";
-          pedidoState.set(from, state);
-          const user = users.get(from);
+          estado.step = "aguardar_endereco";
+          estadoPedido.set(from, estado);
+          const user = usuarios.get(from);
           if (user && user.address) {
-            if (addressInAllowedNeighborhood(user.address)) {
-              state.address = user.address;
-              state.step = "aguardar_pagamento";
-              pedidoState.set(from, state);
+            if (enderecoEmBairroPermitido(user.address)) {
+              estado.address = user.address;
+              estado.step = "aguardar_pagamento";
+              estadoPedido.set(from, estado);
               await msg.reply(`Usando seu endereço cadastrado: ${user.address}\nQual a forma de pagamento? Responda *PIX*, *CARTÃO* ou *DINHEIRO*.`);
               return;
             } else {
-              state.step = "aguardar_endereco_dados";
-              pedidoState.set(from, state);
+              estado.step = "aguardar_endereco_dados";
+              estadoPedido.set(from, estado);
               await msg.reply(`Seu endereço cadastrado (${user.address}) parece *fora* da nossa área de entrega. 🚫\nVocê pode digitar *RETIRAR* para retirada na loja ou enviar outro endereço dentro dos bairros atendidos.\n\nBairros: Vila São Roque, Vilinha, Canoeiro, Trizidela, Expoagra, Vila Tucum, Aeroporto, Ronierd Barros, Joana Batista, Conjunto Parque Grajaú, Conjunto Frei Alberto Beretta, Centro, Rodoviária, Extrema.`);
               return;
             }
           } else {
-            state.step = "aguardar_endereco_dados";
-            pedidoState.set(from, state);
+            estado.step = "aguardar_endereco_dados";
+            estadoPedido.set(from, estado);
             await msg.reply("Por favor, informe o endereço completo para entrega (Rua, número, bairro, complemento) ou digite *RETIRAR* para retirada na loja.");
             return;
           }
         }
 
-        const maybeProd = findProductByName(textRaw);
+        const maybeProd = buscarProdutoPorNome(textRaw);
         if (maybeProd) {
-          state.step = "aguardando_produto";
-          pedidoState.set(from, state);
+          estado.step = "aguardando_produto";
+          estadoPedido.set(from, estado);
           await client.sendMessage(from, "Detectei um novo produto — adicionando na próxima mensagem.");
           return;
         }
@@ -357,85 +411,85 @@ client.on("message", async (msg) => {
         return;
       }
 
-      if (state.step === "aguardar_endereco_dados") {
+      if (estado.step === "aguardar_endereco_dados") {
         if (textNorm.match(/^retirar|retirada$/i)) {
-          state.address = "RETIRADA NA LOJA";
-          state.step = "aguardar_nome";
-          pedidoState.set(from, state);
+          estado.address = "RETIRADA NA LOJA";
+          estado.step = "aguardar_nome";
+          estadoPedido.set(from, estado);
           await msg.reply("Retirada escolhida. Qual o seu nome para o pedido?");
           return;
         }
 
-        const providedAddress = textRaw;
-        if (addressInAllowedNeighborhood(providedAddress)) {
-          state.address = providedAddress;
-          const prev = users.get(from) || {};
-          users.set(from, { clientName: prev.clientName || null, address: providedAddress });
-          state.step = "aguardar_nome";
-          pedidoState.set(from, state);
+        const enderecoFornecido = textRaw;
+        if (enderecoEmBairroPermitido(enderecoFornecido)) {
+          estado.address = enderecoFornecido;
+          const prev = usuarios.get(from) || {};
+          usuarios.set(from, { clientName: prev.clientName || null, address: enderecoFornecido });
+          estado.step = "aguardar_nome";
+          estadoPedido.set(from, estado);
           await msg.reply("Endereço válido. Agora me diga seu *nome completo* para finalizar o cadastro do pedido.");
           return;
         } else {
           await msg.reply(`Infelizmente seu endereço não está na nossa área de entrega. 😕\nOpções:\n1️⃣ Envie outro endereço dentro dos bairros atendidos.\n2️⃣ Digite *RETIRAR* para retirar na loja.\n\nBairros atendidos: Vila São Roque, Vilinha, Canoeiro, Trizidela, Expoagra, Vila Tucum, Aeroporto, Ronierd Barros, Joana Batista, Conjunto Parque Grajaú, Conjunto Frei Alberto Beretta, Centro, Rodoviária, Extrema.`);
-          pedidoState.set(from, state);
+          estadoPedido.set(from, estado);
           return;
         }
       }
 
-      if (state.step === "aguardar_nome") {
-        state.client = textRaw;
-        const prev = users.get(from) || {};
-        users.set(from, { clientName: state.client, address: state.address || prev.address || null });
-        state.step = "aguardar_pagamento";
-        pedidoState.set(from, state);
+      if (estado.step === "aguardar_nome") {
+        estado.client = textRaw;
+        const prev = usuarios.get(from) || {};
+        usuarios.set(from, { clientName: estado.client, address: estado.address || prev.address || null });
+        estado.step = "aguardar_pagamento";
+        estadoPedido.set(from, estado);
         await msg.reply("Obrigado! Agora informe a forma de pagamento: *PIX*, *CARTÃO* ou *DINHEIRO*.");
         return;
       }
 
-      if (state.step === "aguardar_pagamento") {
+      if (estado.step === "aguardar_pagamento") {
         const method = textNorm.match(/pix/) ? "PIX" : textNorm.match(/cartao|visa|mastercard/) ? "CARTÃO" : textNorm.match(/dinheiro|troco/) ? "DINHEIRO" : null;
         if (!method) {
           await msg.reply("Forma de pagamento não reconhecida. Digite *PIX*, *CARTÃO* ou *DINHEIRO*.");
           return;
         }
-        state.payment_method = method;
-        state.step = "confirmar_pedido";
-        pedidoState.set(from, state);
+        estado.payment_method = method;
+        estado.step = "confirmar_pedido";
+        estadoPedido.set(from, estado);
 
-        const itemsTxt = state.items.map((it, i) => `${i + 1}️⃣ ${it.name} — ${it.qty} x ${formatCurrency(it.price)} = ${formatCurrency(it.qty * it.price)}`).join("\n");
-        await msg.reply(`🧾 Resumo do pedido:\n${itemsTxt}\n\nTotal: ${formatCurrency(state.total)}\nEndereço: ${state.address}\nPagamento: ${state.payment_method}\n\nResponda *CONFIRMAR* para finalizar ou *CANCELAR* para abortar.`);
+        const itemsTxt = estado.items.map((it, i) => `${i + 1}️⃣ ${it.name} — ${it.qty} x ${formatarMoeda(it.price)} = ${formatarMoeda(it.qty * it.price)}`).join("\n");
+        await msg.reply(`🧾 Resumo do pedido:\n${itemsTxt}\n\nTotal: ${formatarMoeda(estado.total)}\nEndereço: ${estado.address}\nPagamento: ${estado.payment_method}\n\nResponda *CONFIRMAR* para finalizar ou *CANCELAR* para abortar.`);
         return;
       }
 
-      if (state.step === "confirmar_pedido") {
+      if (estado.step === "confirmar_pedido") {
         if (textNorm.match(/^(confirmar|confirmo|sim)$/i)) {
-          const orderCode = generateOrderCode();
+          const orderCode = gerarCodigoPedido();
           const now = new Date().toISOString();
           const orderObj = {
             order_code: orderCode,
             datetime: now,
-            client: state.client || "",
+            client: estado.client || "",
             phone: from,
-            address: state.address || "",
-            items: state.items,
-            total: state.total,
-            payment_method: state.payment_method || "",
-            notes: state.notes || "",
+            address: estado.address || "",
+            items: estado.items,
+            total: estado.total,
+            payment_method: estado.payment_method || "",
+            notes: estado.notes || "",
           };
-          saveOrderToCsv(orderObj);
+          salvarPedidoCsv(orderObj);
 
-          await msg.reply(`✅ Pedido *${orderCode}* confirmado! Obrigado ${state.client || ""}. Entraremos em contato para combinar entrega/pagamento.\nTempo estimado: 45-70 minutos.\nDeseja acrescentar mais algo? Digite o produto ou *NÃO* para encerrar.`);
+          await msg.reply(`✅ Pedido *${orderCode}* confirmado! Obrigado ${estado.client || ""}. Entraremos em contato para combinar entrega/pagamento.\nTempo estimado: 45-70 minutos.\nDeseja acrescentar mais algo? Digite o produto ou *NÃO* para encerrar.`);
 
           if (OWNER_NUMBER) {
-            const summary = `NOVO PEDIDO ${orderCode}\nDe: ${state.client || from}\nTel: ${from}\nTotal: ${formatCurrency(state.total)}\nEndereço: ${state.address || "RETIRADA"}\nItens: ${state.items.map(it => `${it.qty}x ${it.name}`).join(", ")}`;
+            const summary = `NOVO PEDIDO ${orderCode}\nDe: ${estado.client || from}\nTel: ${from}\nTotal: ${formatarMoeda(estado.total)}\nEndereço: ${estado.address || "RETIRADA"}\nItens: ${estado.items.map(it => `${it.qty}x ${it.name}`).join(", ")}`;
             try { await client.sendMessage(OWNER_NUMBER, summary); } catch (e) { console.warn("Erro ao notificar owner:", e?.message || e); }
           }
 
-          pedidoState.set(from, { step: "aguardando_produto", items: [], total: 0, client: state.client, address: state.address });
+          estadoPedido.set(from, { step: "aguardando_produto", items: [], total: 0, client: estado.client, address: estado.address });
           return;
         } else if (textNorm.match(/^(cancelar|nao|não)$/i)) {
           await msg.reply("Pedido cancelado. Digite *menu* para voltar ao início.");
-          pedidoState.delete(from);
+          estadoPedido.delete(from);
           return;
         } else {
           await msg.reply("Digite *CONFIRMAR* para finalizar ou *CANCELAR* para abortar.");
@@ -443,10 +497,10 @@ client.on("message", async (msg) => {
         }
       }
 
-    } // fim bloco pedidoState
+    } // fim bloco estadoPedido
 
     // ---- Comandos gerais / menus (ATACADO apenas) ----
-    if (textNorm.match(/^(oi|ola|menu|inicio|comecar|comecar)$/i)) {
+    if (textNorm.match(/^(oi|ola|menu|inicio|comecar|começar)$/i)) {
       const welcome =
 `🍻 *Boas-vindas ao ${DEPOSITO.nome}!* 🍻
 Eu sou a *Tati*, sua assistente virtual. 🤖✨
@@ -457,17 +511,16 @@ O que deseja fazer hoje?
 3️⃣ *👤 Atendente humano* (falar com alguém)
 
 Digite o número ou a opção (ex: *1* ou *atacado*).`;
-      await delay(200);
+      await delay(DELAY_CURTO);
       await msg.reply(welcome);
       return;
     }
 
     if (textNorm === "1" || textNorm.match(/\b(atacado)\b/)) {
-      await delay(200);
+      await delay(DELAY_CURTO);
       await msg.reply("Atacado selecionado. Escolha uma categoria para ver produtos por atacado:");
-      // mostra texto com categorias (visível) e em seguida a List interativa
-      await client.sendMessage(from, buildCategoriesText());
-      await client.sendMessage(from, buildCategoriesList());
+      await client.sendMessage(from, construirTextoCategorias());
+      await client.sendMessage(from, construirListaCategorias());
       return;
     }
 
@@ -484,31 +537,28 @@ Digite o número ou a opção (ex: *1* ou *atacado*).`;
       return;
     }
 
-    // catálogo / categorias — aceitar "catálogo" com acento e sem
     if (textNorm.match(/\b(catalogo|categorias|produtos|menu categorias)\b/)) {
       console.log("Usuário pediu catálogo; enviando categories text + list.");
-      await client.sendMessage(from, buildCategoriesText());
-      await client.sendMessage(from, buildCategoriesList());
+      await client.sendMessage(from, construirTextoCategorias());
+      await client.sendMessage(from, construirListaCategorias());
       return;
     }
 
     // aceitar se o usuário digitou o nome da categoria ou o número dela
     const cats = Object.keys(DEPOSITO.categories);
-    // por número (1,2,...)
     if (/^\d+$/.test(textRaw.trim())) {
       const idx = parseInt(textRaw.trim(), 10) - 1;
       if (idx >= 0 && idx < cats.length) {
         const catName = cats[idx];
-        await client.sendMessage(from, buildProductsListForCategory(catName));
+        await client.sendMessage(from, construirListaProdutosParaCategoria(catName));
         return;
       }
     }
-    // por nome da categoria (aceita acentos)
     for (const catName of cats) {
-      const catNorm = removeAccents(catName);
+      const catNorm = removerAcentos(catName);
       if (textNorm.includes(catNorm) || textNorm === catNorm) {
         console.log(`Usuário digitou categoria: ${catName} (matched by name)`);
-        await client.sendMessage(from, buildProductsListForCategory(catName));
+        await client.sendMessage(from, construirListaProdutosParaCategoria(catName));
         return;
       }
     }
@@ -518,7 +568,7 @@ Digite o número ou a opção (ex: *1* ou *atacado*).`;
       const idx = parseInt(textRaw.split("_")[1], 10);
       const catName = Object.keys(DEPOSITO.categories)[idx];
       if (catName) {
-        await client.sendMessage(from, buildProductsListForCategory(catName));
+        await client.sendMessage(from, construirListaProdutosParaCategoria(catName));
         return;
       }
     }
@@ -530,24 +580,24 @@ Digite o número ou a opção (ex: *1* ou *atacado*).`;
         if (found) { prod = { ...found, category: cat }; break; }
       }
       if (prod) {
-        pedidoState.set(from, { step: "confirm_item", items: [{ code: prod.code, name: prod.name, price: prod.price, qty: 1, category: prod.category }], total: prod.price, client: null, address: null });
-        await msg.reply(`✅ Adicionado: ${prod.name} — 1 x ${formatCurrency(prod.price)}\nDeseja adicionar mais itens? Digite o produto ou *continuar* para finalizar.`);
+        estadoPedido.set(from, { step: "confirmar_item", items: [{ code: prod.code, name: prod.name, price: prod.price, qty: 1, category: prod.category }], total: prod.price, client: null, address: null });
+        await msg.reply(`✅ Adicionado: ${prod.name} — 1 x ${formatarMoeda(prod.price)}\nDeseja adicionar mais itens? Digite o produto ou *continuar* para finalizar.`);
         return;
       }
     }
 
     // tentar entender mensagens livres (ex: "Quero 3 Skol")
-    const maybeQty = extractQuantity(textRaw);
-    const maybeProd = findProductByName(textRaw);
-    if (maybeProd) {
-      pedidoState.set(from, { step: "confirm_item", items: [{ code: maybeProd.code, name: maybeProd.name, price: maybeProd.price, qty: maybeQty || 1, category: maybeProd.category }], total: (maybeQty || 1) * maybeProd.price, client: null, address: null });
-      await msg.reply(`✅ Adicionado: ${maybeProd.name} — ${maybeQty || 1} x ${formatCurrency(maybeProd.price)}\nDeseja adicionar mais itens? Digite o produto ou *continuar* para finalizar.`);
+    const talvezQtd = extrairQuantidade(textRaw);
+    const talvezProd = buscarProdutoPorNome(textRaw);
+    if (talvezProd) {
+      estadoPedido.set(from, { step: "confirmar_item", items: [{ code: talvezProd.code, name: talvezProd.name, price: talvezProd.price, qty: talvezQtd || 1, category: talvezProd.category }], total: (talvezQtd || 1) * talvezProd.price, client: null, address: null });
+      await msg.reply(`✅ Adicionado: ${talvezProd.name} — ${talvezQtd || 1} x ${formatarMoeda(talvezProd.price)}\nDeseja adicionar mais itens? Digite o produto ou *continuar* para finalizar.`);
       return;
     }
 
     // iniciar pedido direto
     if (textNorm.match(/\b(fazer pedido|pedir|pedido)\b/)) {
-      pedidoState.set(from, { step: "aguardando_produto", items: [], total: 0, client: null, address: null, payment_method: null, notes: null, pending_upsell: null });
+      estadoPedido.set(from, { step: "aguardando_produto", items: [], total: 0, client: null, address: null, payment_method: null, notes: null, pending_upsell: null });
       await msg.reply("Ótimo — diga o *nome do produto* que deseja (ex: CERVEJA LATA 350ml) ou digite *catálogo* para ver categorias.");
       return;
     }
